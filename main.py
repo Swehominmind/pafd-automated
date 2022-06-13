@@ -147,7 +147,7 @@ class Zlapp(Fudan):
         # 地区从oldInfo中提取
         last_area = last_info["d"]["oldInfo"]["area"]
         print("◉上一次提交的地区是:", last_area)
-        if last_area == "其他国家":
+        if last_area != "中国大陆":
             pass
         else:
             position = last_info["d"]["info"]['geo_api_info']
@@ -210,7 +210,7 @@ class Zlapp(Fudan):
         province = self.last_info["province"]
         city = self.last_info["city"]
         area = self.last_info["area"]
-        if area == "其他国家":
+        if area != "中国大陆":
             gwszdd = self.last_info["gwszdd"]
         else:
             geo_api_info = json_loads(self.last_info["geo_api_info"])
@@ -220,7 +220,7 @@ class Zlapp(Fudan):
             print("◉正在识别验证码......")
             code = self.validate_code()
             print("◉验证码为:", code)
-            if area == "其他国家":
+            if area != "中国大陆":
                 self.last_info.update(
                     {
                         "tw": "13",
