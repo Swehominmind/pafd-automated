@@ -1,4 +1,3 @@
-import json
 import time
 import os
 from json import loads as json_loads
@@ -6,15 +5,38 @@ from os import path as os_path, getenv
 from sys import exit as sys_exit
 from getpass import getpass
 import re
-import base64
 import easyocr
 import io
 import numpy
 from PIL import Image
 from PIL import ImageEnhance
 
-from requests import session, post, adapters
+from requests import session, adapters
+import urllib3
+import ssl
 adapters.DEFAULT_RETRIES = 5
+
+
+class CustomHttpAdapter (adapters.HTTPAdapter):
+    # "Transport adapter" that allows us to use custom ssl_context.
+
+    def __init__(self, ssl_context=None, **kwargs):
+        self.ssl_context = ssl_context
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = urllib3.poolmanager.PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_context=self.ssl_context)
+
+
+def get_legacy_session():
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ctx.options |= 0x4  # OP_LEGACY_SERVER_CONNECT
+    mySession = session()
+    mySession.mount('https://', CustomHttpAdapter(ctx))
+    return mySession
+
 
 class Fudan:
     """
@@ -33,7 +55,7 @@ class Fudan:
         :param psw: 密码
         :param url_login: 登录页，默认服务为空
         """
-        self.session = session()
+        self.session = get_legacy_session()
         self.session.keep_alive = False
         self.session.headers['User-Agent'] = self.UA
         self.url_login = url_login
@@ -156,7 +178,7 @@ class Zlapp(Fudan):
             print("◉上一次提交地址为:", position['formattedAddress'])
             # print("◉上一次提交GPS为", position["position"])
         # print(last_info)
-        
+
         # 改为上海时区
         os.environ['TZ'] = 'Asia/Shanghai'
         time.tzset()
@@ -168,26 +190,25 @@ class Zlapp(Fudan):
         else:
             print("\n\n*******未提交*******")
             self.last_info = last_info["d"]["oldInfo"]
-            
+
     def read_captcha(self, img_byte):
         img = Image.open(io.BytesIO(img_byte)).convert('L')
         enh_bri = ImageEnhance.Brightness(img)
         new_img = enh_bri.enhance(factor=1.5)
-        
+
         image = numpy.array(new_img)
         reader = easyocr.Reader(['en'])
         horizontal_list, free_list = reader.detect(image, optimal_num_chars=4)
         character = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         allow_list = list(character)
         allow_list.extend(list(character.lower()))
-    
-        result = reader.recognize(image, 
-                                allowlist=allow_list,
-                                horizontal_list=horizontal_list[0],
-                                free_list=free_list[0],
-                                detail = 0)
+
+        result = reader.recognize(image,
+                                  allowlist=allow_list,
+                                  horizontal_list=horizontal_list[0],
+                                  free_list=free_list[0],
+                                  detail=0)
         return result[0]
-    
 
     def validate_code(self):
         img = self.session.get(self.url_code).content
@@ -206,7 +227,7 @@ class Zlapp(Fudan):
         }
 
         print("\n\n◉◉提交中")
-        
+
         province = self.last_info["province"]
         city = self.last_info["city"]
         area = self.last_info["area"]
@@ -215,7 +236,7 @@ class Zlapp(Fudan):
         else:
             geo_api_info = json_loads(self.last_info["geo_api_info"])
             district = geo_api_info["addressComponent"].get("district", "")
-        
+
         while(True):
             print("◉正在识别验证码......")
             code = self.validate_code()
@@ -228,8 +249,8 @@ class Zlapp(Fudan):
                         "city": city,
                         "area": area,
                         "gwszdd": gwszdd,
-                        #"sfzx": "1",  # 是否在校
-                        #"fxyy": "",  # 返校原因
+                        # "sfzx": "1",  # 是否在校
+                        # "fxyy": "",  # 返校原因
                         "code": code,
                     }
                 )
@@ -240,8 +261,8 @@ class Zlapp(Fudan):
                         "province": province,
                         "city": city,
                         "area": " ".join((province, city, district)),
-                        #"sfzx": "1",  # 是否在校
-                        #"fxyy": "",  # 返校原因
+                        # "sfzx": "1",  # 是否在校
+                        # "fxyy": "",  # 返校原因
                         "code": code,
                     }
                 )
@@ -257,6 +278,7 @@ class Zlapp(Fudan):
             time.sleep(0.1)
             if(json_loads(save.text)["e"] != 1):
                 break
+
 
 def get_account():
     """
